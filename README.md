@@ -1,46 +1,16 @@
-<div align = "center">
-    <img src = "https://solaris-site.netlify.app/projects/erelajs/images/transparent_logo.png">
-    <hr>
-    <br>
-    <a href="https://discord.gg/menudocs">
-        <img src="https://img.shields.io/discord/416512197590777857?color=7289DA&label=Support&logo=discord&style=for-the-badge" alt="Discord">
-    </a>
-    <!--<a href="https://www.npmjs.com/package/erela.js">
-        <img src="https://img.shields.io/npm/dw/erela.js?color=CC3534&logo=npm&style=for-the-badge" alt="Downloads">
-    </a>
-    <a href="https://www.npmjs.com/package/erela.js">
-        <img src="https://img.shields.io/npm/v/erela.js?color=red&label=Version&logo=npm&style=for-the-badge" alt="Npm version">
-    </a>
-    <br>-->
-    <a href="https://github.com/MenuDocs/erela.js">
-        <img src="https://img.shields.io/github/stars/MenuDocs/erela.js?color=333&logo=github&style=for-the-badge" alt="Github stars">
-    </a>
-    <a href="https://github.com/MenuDocs/erela.js/blob/master/LICENSE">
-        <img src="https://img.shields.io/github/license/MenuDocs/erela.js?color=6e5494&logo=github&style=for-the-badge" alt="License">
-    </a>
-    <hr>
-</div>
-
-## Archived
-
-Due to a growing concern about the status of Music Bots on Discord and a lack of motivation from the team, we have decided to archive Erela and drop support for it entirely.
-
-We recommend to use another lavalink client and not a fork, you can find another one [here](https://github.com/freyacodes/lavalink#client-libraries).
-
-<!--
 > Erela was transferred to MenuDocs, because I no longer wish to work with Discord related development. It will from now on be maintained by [MenuDocs](https://github.com/MenuDocs). ~ @Solaris9
 
 ## Documentation & Guides
 
-- [Documentation](https://erelajs-docs.netlify.app/docs/gettingstarted.html "Erela.js Documentation")
+-   [Documentation](https://erelajs-docs.netlify.app/docs/gettingstarted.html 'Erela.js Documentation')
 
-- [Guides](https://erelajs-docs.netlify.app/guides/introduction.html "Erela.js Guides")
+-   [Guides](https://erelajs-docs.netlify.app/guides/introduction.html 'Erela.js Guides')
 
 ## Prerequisites
 
-- Java - [Azul](https://www.azul.com/downloads/zulu-community/?architecture=x86-64-bit&package=jdk "Download Azul OpenJDK"), [Adopt](https://adoptopenjdk.net/ "Download Adopt OpenJDK") or [sdkman](https://sdkman.io/install "Download sdkman")
+-   Java - [Azul](https://www.azul.com/downloads/zulu-community/?architecture=x86-64-bit&package=jdk 'Download Azul OpenJDK'), [Adopt](https://adoptopenjdk.net/ 'Download Adopt OpenJDK') or [sdkman](https://sdkman.io/install 'Download sdkman')
 
-- [Lavalink](https://ci.fredboat.com/viewLog.html?buildId=lastSuccessful&buildTypeId=Lavalink_Build&tab=artifacts&guest=1 "Download Lavalink")
+-   [Lavalink](https://github.com/lavalink-devs/Lavalink/releases 'Download Lavalink')
 
 **Note**: _Java v11 or newer is required to run the Lavalink.jar. Java v13 is recommended._ If you are using **sdkman** then _its a manager, not Java, you have to install sdkman and use sdkman to install Java_
 
@@ -48,25 +18,17 @@ We recommend to use another lavalink client and not a fork, you can find another
 
 ## Installation
 
-##### **NPM**
-
 ```bash
-npm install erela.js
-```
-
-##### **Yarn**
-
-```bash
-yarn add erela.js
+npm install daniquoll/erela.js
 ```
 
 **Note**: _Node **v16** is required!_
 
 ## Getting Started
 
-- Create an application.yml file in your working directory and copy the [example](https://github.com/freyacodes/Lavalink/blob/master/LavalinkServer/application.yml.example "application.yml file") into the created file and edit it with your configuration.
+-   Create an application.yml file in your working directory and copy the [example](https://github.com/lavalink-devs/Lavalink/blob/master/LavalinkServer/application.yml.example 'application.yml file') into the created file and edit it with your configuration.
 
-- Run the jar file by running `java -jar Lavalink.jar` in a Terminal window.
+-   Run the jar file by running `java -jar Lavalink.jar` in a Terminal window.
 
 ## Example usage
 
@@ -76,22 +38,21 @@ Please read the guides to start: <https://erelajs-docs.netlify.app/docs/gettings
 
 👤 **Solaris**
 
-- Author
-- Website: <https://solaris.codes/>
-- Github: [@Solaris9](https://github.com/Solaris9)
+-   Author
+-   Website: <https://solaris.codes/>
+-   Github: [@Solaris9](https://github.com/Solaris9)
 
 👤 **Anish Shobith**
 
-- Contributor
-- Github: [@Anish-Shobith](https://github.com/Anish-Shobith)
+-   Contributor
+-   Github: [@Anish-Shobith](https://github.com/Anish-Shobith)
 
 👤 **melike2d**
 
-- Contributor
-- Github: [@melike2d](https://github.com/melike2d)
+-   Contributor
+-   Github: [@melike2d](https://github.com/melike2d)
 
 👤 **ayntee**
 
-- Contributor
-- Github: [@ayntee](https://github.com/ayntee)
---!>
+-   Contributor
+-   Github: [@ayntee](https://github.com/ayntee)
