@@ -6,7 +6,6 @@ import { Node, NodeOptions } from './Node'
 import { Player, PlayerOptions, Track, UnresolvedTrack } from './Player'
 import {
     LoadType,
-    Plugin,
     Structure,
     TrackData,
     TrackEndEvent,
@@ -34,9 +33,6 @@ function check(options: ManagerOptions) {
 
     if (typeof options.shards !== 'undefined' && typeof options.shards !== 'number')
         throw new TypeError('Manager option "shards" must be a number.')
-
-    if (typeof options.plugins !== 'undefined' && !Array.isArray(options.plugins))
-        throw new TypeError('Manager option "plugins" must be a Plugin array.')
 
     if (typeof options.autoPlay !== 'undefined' && typeof options.autoPlay !== 'boolean')
         throw new TypeError('Manager option "autoPlay" must be a boolean.')
@@ -215,21 +211,12 @@ export class Manager extends EventEmitter {
         }
 
         this.options = {
-            plugins: [],
             nodes: [{ identifier: 'default', host: 'localhost' }],
             shards: 1,
             autoPlay: true,
             clientName: 'erela.js',
             defaultSearchPlatform: 'youtube',
             ...options
-        }
-
-        if (this.options.plugins) {
-            for (const [index, plugin] of this.options.plugins.entries()) {
-                if (!(plugin instanceof Plugin))
-                    throw new RangeError(`Plugin at index ${index} does not extend Plugin.`)
-                plugin.load(this)
-            }
         }
 
         if (this.options.nodes) {
@@ -462,8 +449,6 @@ export interface ManagerOptions {
     clientName?: string
     /** The shard count. */
     shards?: number
-    /** A array of plugins to use. */
-    plugins?: Plugin[]
     /** Whether players should automatically play the next song. */
     autoPlay?: boolean
     /** An array of track properties to keep. `track` will always be present. */
