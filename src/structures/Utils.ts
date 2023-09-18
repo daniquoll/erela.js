@@ -91,7 +91,7 @@ export abstract class TrackUtils {
 
     try {
       const track: Track = {
-        track: data.track,
+        track: data.encoded,
         title: data.info.title,
         identifier: data.info.identifier,
         author: data.info.author,
@@ -299,7 +299,9 @@ export type TrackEndReason =
 export type Severity = "COMMON" | "SUSPICIOUS" | "FAULT";
 
 export interface TrackData {
-  track: string;
+  encoded: string;
+  /** @deprecated */
+  track?: string;
   info: TrackDataInfo;
 }
 

@@ -77,6 +77,7 @@ export class Node {
   /** The stats for the node. */
   public stats: NodeStats;
   public manager: Manager
+  public sessionId: string
 
   private static _manager: Manager;
   private reconnectTimeout?: NodeJS.Timeout;
@@ -165,7 +166,7 @@ export class Node {
       "Client-Name": this.manager.options.clientName,
     };
 
-    this.socket = new WebSocket(`ws${this.options.secure ? "s" : ""}://${this.address}`, { headers });
+    this.socket = new WebSocket(`ws${this.options.secure ? "s" : ""}://${this.address}/v3/websocket`, { headers });
     this.socket.on("open", this.open.bind(this));
     this.socket.on("close", this.close.bind(this));
     this.socket.on("message", this.message.bind(this));
@@ -198,7 +199,7 @@ export class Node {
    */
   public async makeRequest<T>(endpoint: string, modify?: ModifyRequest): Promise<T> {
     const options: Dispatcher.RequestOptions = {
-      path: `/${endpoint.replace(/^\//gm, "")}`,
+      path: `/v3/${endpoint.replace(/^\//gm, "")}`,
       method: "GET",
       headers: {
         Authorization: this.options.password
@@ -211,7 +212,7 @@ export class Node {
     const request = await this.http.request(options);
     this.calls++;
 
-    return await request.body.json();
+    return await request.body.json() as T;
   }
 
   /**
@@ -285,11 +286,14 @@ export class Node {
       case "event":
         this.handleEvent(payload);
         break;
+      case "ready":
+        this.sessionId = payload.sessionId
+        break;
       default:
         this.manager.emit(
           "nodeError",
           this,
-          new Error(`Unexpected op "${payload.op}" with data: ${payload}`)
+          new Error(`Unexpected op "${payload.op}" with data: ${JSON.stringify(payload)}`)
         );
         return;
     }
