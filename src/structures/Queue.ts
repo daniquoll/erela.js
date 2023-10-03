@@ -33,17 +33,18 @@ export class Queue extends Array<Track | UnresolvedTrack> {
      * @param track
      * @param [offset=null]
      */
-    public add(track: (Track | UnresolvedTrack) | (Track | UnresolvedTrack)[], offset?: number): void {
+    public add(track: (Track | UnresolvedTrack) | (Track | UnresolvedTrack)[], offset?: number): Queue {
         if (!TrackUtils.validate(track)) {
             throw new RangeError('Track must be a "Track" or "Track[]".')
         }
 
         if (!this.current) {
-            if (!Array.isArray(track)) {
-                this.current = track
-                return
-            } else {
+            if (Array.isArray(track)) {
                 this.current = (track = [...track]).shift()
+            } else {
+                this.current = track
+
+                return this
             }
         }
 
@@ -64,6 +65,8 @@ export class Queue extends Array<Track | UnresolvedTrack> {
             if (track instanceof Array) this.splice(offset, 0, ...track)
             else this.splice(offset, 0, track)
         }
+
+        return this
     }
 
     /**

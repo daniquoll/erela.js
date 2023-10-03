@@ -48,6 +48,8 @@ function check(options: NodeOptions) {
 export class Node {
     /** The socket for the node. */
     public socket: WebSocket | null = null
+    /** The client session ID */
+    public sessionId: string
     /** The HTTP pool used for rest calls. */
     public http: Pool
     /** The amount of rest calls the node has made. */
@@ -55,7 +57,6 @@ export class Node {
     /** The stats for the node. */
     public stats: NodeStats
     public manager: Manager
-    public sessionId: string
 
     private static _manager: Manager
     private reconnectTimeout?: NodeJS.Timeout
@@ -63,8 +64,7 @@ export class Node {
 
     /** Returns if connected to the Node. */
     public get connected(): boolean {
-        if (!this.socket) return false
-        return this.socket.readyState === WebSocket.OPEN
+        return this.socket?.readyState === WebSocket.OPEN
     }
 
     /** Returns the address for this node. */
@@ -96,7 +96,7 @@ export class Node {
             password: 'youshallnotpass',
             secure: false,
             retryAmount: 5,
-            retryDelay: 30e3,
+            retryDelay: 1000 * 30,
             ...options
         }
 
@@ -155,7 +155,7 @@ export class Node {
     public destroy(): void {
         if (!this.connected) return
 
-        const players = this.manager.players.filter(p => p.node == this)
+        const players = this.manager.players.filter(p => p.node.sessionId === this.sessionId)
         if (players.size) players.forEach(p => p.destroy())
 
         this.socket.close(1000, 'destroy')
@@ -200,9 +200,11 @@ export class Node {
     public send(data: unknown): Promise<boolean> {
         return new Promise((resolve, reject) => {
             if (!this.connected) return resolve(false)
+
             if (!data || !JSON.stringify(data).startsWith('{')) {
                 return reject(false)
             }
+
             this.socket.send(JSON.stringify(data), (error: Error) => {
                 if (error) reject(error)
                 else resolve(true)
@@ -218,6 +220,7 @@ export class Node {
                 this.manager.emit('nodeError', this, error)
                 return this.destroy()
             }
+
             this.socket.removeAllListeners()
             this.socket = null
             this.manager.emit('nodeReconnect', this)
@@ -295,8 +298,7 @@ export class Node {
         } else if (payload.type === 'WebSocketClosedEvent') {
             this.socketClosed(player, payload)
         } else {
-            const error = new Error(`Node#event unknown event '${type}'.`)
-            this.manager.emit('nodeError', this, error)
+            this.manager.emit('nodeError', this, new Error(`Node#event unknown event '${type}'.`))
         }
     }
 
@@ -336,6 +338,7 @@ export class Node {
 
             this.manager.emit('trackEnd', player, track, payload)
             if (this.manager.options.autoPlay) player.play()
+
             return
         }
 
@@ -353,6 +356,7 @@ export class Node {
 
             this.manager.emit('trackEnd', player, track, payload)
             if (this.manager.options.autoPlay) player.play()
+
             return
         }
 
@@ -363,6 +367,7 @@ export class Node {
 
             this.manager.emit('trackEnd', player, track, payload)
             if (this.manager.options.autoPlay) player.play()
+
             return
         }
 
@@ -413,6 +418,8 @@ export interface NodeOptions {
     requestTimeout?: number
     /** Options for the undici http pool used for http requests */
     poolOptions?: Pool.Options
+    /** The Lavalink version. */
+    version?: 'v3'
 }
 
 export interface NodeStats {

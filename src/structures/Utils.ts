@@ -41,6 +41,7 @@ export abstract class TrackUtils {
             for (const track of trackOrTracks) {
                 if (!(track[TRACK_SYMBOL] || track[UNRESOLVED_TRACK_SYMBOL])) return false
             }
+
             return true
         }
 

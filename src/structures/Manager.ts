@@ -18,8 +18,6 @@ import {
     WebSocketClosedEvent
 } from './Utils'
 
-const REQUIRED_KEYS = ['event', 'guildId', 'op', 'sessionId']
-
 function check(options: ManagerOptions) {
     if (!options) throw new TypeError('ManagerOptions must not be empty.')
 
@@ -338,8 +336,8 @@ export class Manager extends EventEmitter {
      * @param options
      */
     public create(options: PlayerOptions): Player {
-        if (this.players.has(options.guild)) {
-            return this.players.get(options.guild)
+        if (this.players.has(options.guildId)) {
+            return this.players.get(options.guildId)
         }
 
         return new (Structure.get('Player'))(options)
@@ -407,23 +405,23 @@ export class Manager extends EventEmitter {
             }
 
             if (update.channel_id) {
-                if (player.voiceChannel !== update.channel_id) {
+                if (player.voiceChannelId !== update.channel_id) {
                     /* we moved voice channels. */
-                    this.emit('playerMove', player, player.voiceChannel, update.channel_id)
+                    this.emit('playerMove', player, player.voiceChannelId, update.channel_id)
                 }
 
                 player.voiceState.sessionId = update.session_id
-                player.voiceChannel = update.channel_id
+                player.voiceChannelId = update.channel_id
             } else {
                 /* player got disconnected. */
-                this.emit('playerDisconnect', player, player.voiceChannel)
-                player.voiceChannel = null
+                this.emit('playerDisconnect', player, player.voiceChannelId)
+                player.voiceChannelId = null
                 player.voiceState = Object.assign({})
                 player.pause(true)
             }
         }
 
-        if (REQUIRED_KEYS.every(key => key in player.voiceState)) {
+        if (['event', 'guildId', 'op', 'sessionId'].every(key => key in player.voiceState)) {
             player.node.send(player.voiceState)
         }
     }

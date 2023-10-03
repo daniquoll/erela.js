@@ -6,13 +6,13 @@ import { Sizes, State, Structure, TrackUtils, VoiceState } from './Utils'
 function check(options: PlayerOptions) {
     if (!options) throw new TypeError('PlayerOptions must not be empty.')
 
-    if (!/^\d+$/.test(options.guild))
+    if (!/^\d+$/.test(options.guildId))
         throw new TypeError('Player option "guild" must be present and be a non-empty string.')
 
-    if (options.textChannel && !/^\d+$/.test(options.textChannel))
+    if (options.textChannelId && !/^\d+$/.test(options.textChannelId))
         throw new TypeError('Player option "textChannel" must be a non-empty string.')
 
-    if (options.voiceChannel && !/^\d+$/.test(options.voiceChannel))
+    if (options.voiceChannelId && !/^\d+$/.test(options.voiceChannelId))
         throw new TypeError('Player option "voiceChannel" must be a non-empty string.')
 
     if (options.node && typeof options.node !== 'string')
@@ -45,12 +45,12 @@ export class Player {
     public volume: number
     /** The Node for the Player. */
     public node: Node
-    /** The guild for the player. */
-    public guild: string
-    /** The voice channel for the player. */
-    public voiceChannel: string | null = null
-    /** The text channel for the player. */
-    public textChannel: string | null = null
+    /** The guild ID for the player. */
+    public guildId: string
+    /** The voice channel ID for the player. */
+    public voiceChannelId: string | null = null
+    /** The text channel ID for the player. */
+    public textChannelId: string | null = null
     /** The current state of the player. */
     public state: State = 'DISCONNECTED'
     /** The equalizer bands array. */
@@ -92,24 +92,24 @@ export class Player {
         if (!this.manager) this.manager = Structure.get('Player')._manager
         if (!this.manager) throw new RangeError('Manager has not been initiated.')
 
-        if (this.manager.players.has(options.guild)) {
-            return this.manager.players.get(options.guild)
+        if (this.manager.players.has(options.guildId)) {
+            return this.manager.players.get(options.guildId)
         }
 
         check(options)
 
-        this.guild = options.guild
-        this.voiceState = Object.assign({ op: 'voiceUpdate', guildId: options.guild })
+        this.guildId = options.guildId
+        this.voiceState = Object.assign({ op: 'voiceUpdate', guildId: options.guildId })
 
-        if (options.voiceChannel) this.voiceChannel = options.voiceChannel
-        if (options.textChannel) this.textChannel = options.textChannel
+        if (options.voiceChannelId) this.voiceChannelId = options.voiceChannelId
+        if (options.textChannelId) this.textChannelId = options.textChannelId
 
         const node = this.manager.nodes.get(options.node)
         this.node = node || this.manager.leastLoadNodes.first()
 
         if (!this.node) throw new RangeError('No available nodes.')
 
-        this.manager.players.set(options.guild, this)
+        this.manager.players.set(options.guildId, this)
         this.manager.emit('playerCreate', this)
         this.setVolume(options.volume ?? 100)
     }
@@ -138,7 +138,7 @@ export class Player {
 
         this.node.send({
             op: 'equalizer',
-            guildId: this.guild,
+            guildId: this.guildId,
             bands: this.bands.map((gain, band) => ({ band, gain }))
         })
 
@@ -151,7 +151,7 @@ export class Player {
 
         this.node.send({
             op: 'equalizer',
-            guildId: this.guild,
+            guildId: this.guildId,
             bands: this.bands.map((gain, band) => ({ band, gain }))
         })
 
@@ -160,14 +160,14 @@ export class Player {
 
     /** Connect to the voice channel. */
     public connect(): this {
-        if (!this.voiceChannel) throw new RangeError('No voice channel has been set.')
+        if (!this.voiceChannelId) throw new RangeError('No voice channel has been set.')
         this.state = 'CONNECTING'
 
-        this.manager.options.send(this.guild, {
+        this.manager.options.send(this.guildId, {
             op: 4,
             d: {
-                guild_id: this.guild,
-                channel_id: this.voiceChannel,
+                guild_id: this.guildId,
+                channel_id: this.voiceChannelId,
                 self_mute: this.options.selfMute || false,
                 self_deaf: this.options.selfDeafen || false
             }
@@ -179,21 +179,21 @@ export class Player {
 
     /** Disconnect from the voice channel. */
     public disconnect(): this {
-        if (this.voiceChannel === null) return this
+        if (this.voiceChannelId === null) return this
         this.state = 'DISCONNECTING'
 
         this.pause(true)
-        this.manager.options.send(this.guild, {
+        this.manager.options.send(this.guildId, {
             op: 4,
             d: {
-                guild_id: this.guild,
+                guild_id: this.guildId,
                 channel_id: null,
                 self_mute: false,
                 self_deaf: false
             }
         })
 
-        this.voiceChannel = null
+        this.voiceChannelId = null
         this.state = 'DISCONNECTED'
         return this
     }
@@ -207,11 +207,11 @@ export class Player {
 
         this.node.send({
             op: 'destroy',
-            guildId: this.guild
+            guildId: this.guildId
         })
 
         this.manager.emit('playerDestroy', this)
-        this.manager.players.delete(this.guild)
+        this.manager.players.delete(this.guildId)
     }
 
     /**
@@ -221,7 +221,7 @@ export class Player {
     public setVoiceChannel(channel: string): this {
         if (typeof channel !== 'string') throw new TypeError('Channel must be a non-empty string.')
 
-        this.voiceChannel = channel
+        this.voiceChannelId = channel
         this.connect()
         return this
     }
@@ -233,7 +233,7 @@ export class Player {
     public setTextChannel(channel: string): this {
         if (typeof channel !== 'string') throw new TypeError('Channel must be a non-empty string.')
 
-        this.textChannel = channel
+        this.textChannelId = channel
         return this
     }
 
@@ -287,7 +287,7 @@ export class Player {
 
         const options = {
             op: 'play',
-            guildId: this.guild,
+            guildId: this.guildId,
             track: this.queue.current.track,
             ...finalOptions
         }
@@ -311,7 +311,7 @@ export class Player {
 
         this.node.send({
             op: 'volume',
-            guildId: this.guild,
+            guildId: this.guildId,
             volume: this.volume
         })
 
@@ -363,7 +363,7 @@ export class Player {
 
         this.node.send({
             op: 'stop',
-            guildId: this.guild
+            guildId: this.guildId
         })
 
         return this
@@ -384,7 +384,7 @@ export class Player {
 
         this.node.send({
             op: 'pause',
-            guildId: this.guild,
+            guildId: this.guildId,
             pause
         })
 
@@ -408,7 +408,7 @@ export class Player {
         this.position = position
         this.node.send({
             op: 'seek',
-            guildId: this.guild,
+            guildId: this.guildId,
             position
         })
 
@@ -417,12 +417,12 @@ export class Player {
 }
 
 export interface PlayerOptions {
-    /** The guild the Player belongs to. */
-    guild: string
-    /** The text channel the Player belongs to. */
-    textChannel: string
-    /** The voice channel the Player belongs to. */
-    voiceChannel?: string
+    /** The guild ID the Player belongs to. */
+    guildId: string
+    /** The text channel ID the Player belongs to. */
+    textChannelId: string
+    /** The voice channel ID the Player belongs to. */
+    voiceChannelId?: string
     /** The node the Player uses. */
     node?: string
     /** The initial volume the Player will use. */
