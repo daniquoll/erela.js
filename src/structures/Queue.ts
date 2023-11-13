@@ -9,6 +9,7 @@ export class Queue extends Array<Track | UnresolvedTrack> {
     /** The total duration of the queue. */
     public get duration(): number {
         const current = this.current?.duration ?? 0
+
         return this.reduce((acc: number, cur: Track) => acc + (cur.duration || 0), current)
     }
 
@@ -110,5 +111,13 @@ export class Queue extends Array<Track | UnresolvedTrack> {
             const j = Math.floor(Math.random() * (i + 1))
             ;[this[i], this[j]] = [this[j], this[i]]
         }
+    }
+
+    /** Unshuffles the queue. */
+    public unshuffle(): void {
+        this.sort((a, b) => {
+            if (a.buildedAt === b.buildedAt) return (a.identifier || a.title).localeCompare(b.identifier || b.title)
+            return a.buildedAt - b.buildedAt
+        })
     }
 }
