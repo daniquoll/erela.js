@@ -1,5 +1,5 @@
 import { Manager, SearchQuery, SearchResult } from './Manager'
-import { Node } from './Node'
+import { Node, PlayerData, PlayerFilters } from './Node'
 import { Queue } from './Queue'
 import { State, TrackUtils, VoiceState } from './Utils'
 
@@ -35,6 +35,8 @@ export class Player {
     public trackRepeat = false
     /** Whether the queue repeats the queue. */
     public queueRepeat = false
+    /** A mode of music playback in which songs are played in a randomized order. */
+    public shufflePlay = false
     /** The time the player is in the track. */
     public position = 0
     /** Whether the player is playing. */
@@ -53,12 +55,11 @@ export class Player {
     public textChannelId: string | null = null
     /** The current state of the player. */
     public state: State = 'DISCONNECTED'
-    /** The equalizer bands array. */
-    public bands = new Array<number>(15).fill(0.0)
     /** The voice state object from Discord. */
     public voiceState: VoiceState
     /** The Manager. */
     public manager: Manager
+
     private static _manager: Manager
     private readonly data: Record<string, unknown> = {}
 
@@ -123,44 +124,10 @@ export class Player {
         return this.manager.search(query, requester)
     }
 
-    /**
-     * Sets the players equalizer band on-top of the existing ones.
-     * @param bands
-     */
-    public setEQ(...bands: EqualizerBand[]): this {
-        // Hacky support for providing an array
-        if (Array.isArray(bands[0])) bands = bands[0] as unknown as EqualizerBand[]
-
-        if (!bands.length || !bands.every(band => JSON.stringify(Object.keys(band).sort()) === '["band","gain"]'))
-            throw new TypeError("Bands must be a non-empty object array containing 'band' and 'gain' properties.")
-
-        for (const { band, gain } of bands) this.bands[band] = gain
-
-        this.node.send({
-            op: 'equalizer',
-            guildId: this.guildId,
-            bands: this.bands.map((gain, band) => ({ band, gain }))
-        })
-
-        return this
-    }
-
-    /** Clears the equalizer bands. */
-    public clearEQ(): this {
-        this.bands = new Array(15).fill(0.0)
-
-        this.node.send({
-            op: 'equalizer',
-            guildId: this.guildId,
-            bands: this.bands.map((gain, band) => ({ band, gain }))
-        })
-
-        return this
-    }
-
     /** Connect to the voice channel. */
     public connect(): this {
         if (!this.voiceChannelId) throw new RangeError('No voice channel has been set.')
+
         this.state = 'CONNECTING'
 
         this.manager.options.send(this.guildId, {
@@ -174,15 +141,17 @@ export class Player {
         })
 
         this.state = 'CONNECTED'
+
         return this
     }
 
     /** Disconnect from the voice channel. */
-    public disconnect(): this {
+    public async disconnect(): Promise<this> {
         if (this.voiceChannelId === null) return this
+
         this.state = 'DISCONNECTING'
 
-        this.pause(true)
+        await this.pause(true)
         this.manager.options.send(this.guildId, {
             op: 4,
             d: {
@@ -195,21 +164,19 @@ export class Player {
 
         this.voiceChannelId = null
         this.state = 'DISCONNECTED'
+
         return this
     }
 
     /** Destroys the player. */
-    public destroy(disconnect = true): void {
+    public async destroy(disconnect = true): Promise<void> {
         this.state = 'DESTROYING'
+
         if (disconnect) {
-            this.disconnect()
+            await this.disconnect()
         }
 
-        this.node.send({
-            op: 'destroy',
-            guildId: this.guildId
-        })
-
+        await this.node.destroyPlayer(this.guildId)
         this.manager.emit('playerDestroy', this)
         this.manager.players.delete(this.guildId)
     }
@@ -218,11 +185,12 @@ export class Player {
      * Sets the player voice channel.
      * @param channel
      */
-    public setVoiceChannel(channel: string): this {
-        if (typeof channel !== 'string') throw new TypeError('Channel must be a non-empty string.')
+    public setVoiceChannelId(channelId: string): this {
+        if (typeof channelId !== 'string') throw new TypeError('Channel must be a non-empty string.')
 
-        this.voiceChannelId = channel
+        this.voiceChannelId = channelId
         this.connect()
+
         return this
     }
 
@@ -230,38 +198,39 @@ export class Player {
      * Sets the player text channel.
      * @param channel
      */
-    public setTextChannel(channel: string): this {
-        if (typeof channel !== 'string') throw new TypeError('Channel must be a non-empty string.')
+    public setTextChannelId(channelId: string): this {
+        if (typeof channelId !== 'string') throw new TypeError('Channel must be a non-empty string.')
 
-        this.textChannelId = channel
+        this.textChannelId = channelId
+
         return this
     }
 
     /** Plays the next track. */
-    public async play(): Promise<void>
+    public async play(): Promise<PlayerData>
 
     /**
      * Plays the specified track.
      * @param track
      */
-    public async play(track: Track | UnresolvedTrack): Promise<void>
+    public async play(track: Track | UnresolvedTrack): Promise<PlayerData>
 
     /**
      * Plays the next track with some options.
      * @param options
      */
-    public async play(options: PlayOptions): Promise<void>
+    public async play(options: PlayOptions): Promise<PlayerData>
 
     /**
      * Plays the specified track with some options.
      * @param track
      * @param options
      */
-    public async play(track: Track | UnresolvedTrack, options: PlayOptions): Promise<void>
+    public async play(track: Track | UnresolvedTrack, options: PlayOptions): Promise<PlayerData>
     public async play(
         optionsOrTrack?: PlayOptions | Track | UnresolvedTrack,
         playOptions?: PlayOptions
-    ): Promise<void> {
+    ): Promise<PlayerData> {
         if (typeof optionsOrTrack !== 'undefined' && TrackUtils.validate(optionsOrTrack)) {
             if (this.queue.current) this.queue.previous = this.queue.current
             this.queue.current = optionsOrTrack as Track
@@ -269,51 +238,50 @@ export class Player {
 
         if (!this.queue.current) throw new RangeError('No current track.')
 
-        const finalOptions = playOptions
+        const options = playOptions
             ? playOptions
-            : ['startTime', 'endTime', 'noReplace'].every(v => Object.keys(optionsOrTrack || {}).includes(v))
+            : ['position', 'endTime', 'noReplace'].every(v => Object.keys(optionsOrTrack || {}).includes(v))
             ? (optionsOrTrack as PlayOptions)
             : {}
 
         if (TrackUtils.isUnresolvedTrack(this.queue.current)) {
             try {
                 this.queue.current = await TrackUtils.getClosestTrack(this.queue.current as UnresolvedTrack)
-            } catch (error) {
-                this.manager.emit('trackError', this, this.queue.current, error)
+            } catch (err) {
+                this.manager.emit('trackError', this, this.queue.current, err)
                 if (this.queue[0]) return this.play(this.queue[0])
                 return
             }
         }
 
-        const options = {
-            op: 'play',
-            guildId: this.guildId,
-            track: this.queue.current.track,
-            ...finalOptions
+        let track = this.queue.current.track
+
+        if (typeof track !== 'string') {
+            track = (track as Track).track
         }
 
-        if (typeof options.track !== 'string') {
-            options.track = (options.track as Track).track
-        }
-
-        await this.node.send(options)
+        return await this.node.updatePlayer(
+            this.guildId,
+            {
+                encodedTrack: track,
+                position: options.position,
+                endTime: options.endTime
+            },
+            options.noReplace
+        )
     }
 
     /**
      * Sets the player volume.
      * @param volume
      */
-    public setVolume(volume: number): this {
+    public async setVolume(volume: number): Promise<this> {
         volume = Number(volume)
 
         if (isNaN(volume)) throw new TypeError('Volume must be a number.')
         this.volume = Math.max(Math.min(volume, 1000), 0)
 
-        this.node.send({
-            op: 'volume',
-            guildId: this.guildId,
-            volume: this.volume
-        })
+        await this.node.updatePlayer(this.guildId, { volume: this.volume })
 
         return this
     }
@@ -325,13 +293,8 @@ export class Player {
     public setTrackRepeat(repeat: boolean): this {
         if (typeof repeat !== 'boolean') throw new TypeError('Repeat can only be "true" or "false".')
 
-        if (repeat) {
-            this.trackRepeat = true
-            this.queueRepeat = false
-        } else {
-            this.trackRepeat = false
-            this.queueRepeat = false
-        }
+        this.trackRepeat = repeat
+        this.queueRepeat = false
 
         return this
     }
@@ -343,28 +306,35 @@ export class Player {
     public setQueueRepeat(repeat: boolean): this {
         if (typeof repeat !== 'boolean') throw new TypeError('Repeat can only be "true" or "false".')
 
-        if (repeat) {
-            this.trackRepeat = false
-            this.queueRepeat = true
+        this.queueRepeat = repeat
+        this.trackRepeat = false
+
+        return this
+    }
+
+    public setShufflePlay(enabled: boolean): this {
+        if (typeof enabled !== 'boolean') throw new TypeError('Enabled can only be "true" or "false".')
+
+        this.shufflePlay = enabled
+
+        if (this.shufflePlay) {
+            this.queue.shuffle()
         } else {
-            this.trackRepeat = false
-            this.queueRepeat = false
+            this.queue.unshuffle()
         }
 
         return this
     }
 
     /** Stops the current track, optionally give an amount to skip to, e.g 5 would play the 5th song. */
-    public stop(amount?: number): this {
+    public async stop(amount?: number): Promise<this> {
         if (typeof amount === 'number' && amount > 1) {
             if (amount > this.queue.length) throw new RangeError('Cannot skip more than the queue length.')
+
             this.queue.splice(0, amount - 1)
         }
 
-        this.node.send({
-            op: 'stop',
-            guildId: this.guildId
-        })
+        await this.node.updatePlayer(this.guildId, { encodedTrack: null })
 
         return this
     }
@@ -373,20 +343,15 @@ export class Player {
      * Pauses the current track.
      * @param pause
      */
-    public pause(pause: boolean): this {
+    public async pause(pause: boolean): Promise<this> {
         if (typeof pause !== 'boolean') throw new RangeError('Pause can only be "true" or "false".')
-
         // If already paused or the queue is empty do nothing https://github.com/MenuDocs/erela.js/issues/58
         if (this.paused === pause || !this.queue.totalSize) return this
 
         this.playing = !pause
         this.paused = pause
 
-        this.node.send({
-            op: 'pause',
-            guildId: this.guildId,
-            pause
-        })
+        await this.node.updatePlayer(this.guildId, { paused: pause })
 
         return this
     }
@@ -395,24 +360,28 @@ export class Player {
      * Seeks to the position in the current track.
      * @param position
      */
-    public seek(position: number): this {
-        if (!this.queue.current) return undefined
+    public async seek(position: number): Promise<this> {
+        if (!this.queue.current) return
+
         position = Number(position)
 
         if (isNaN(position)) {
             throw new RangeError('Position must be a number.')
         }
-        if (position < 0 || position > this.queue.current.duration)
+
+        if (position < 0 || position > this.queue.current.duration) {
             position = Math.max(Math.min(position, this.queue.current.duration), 0)
+        }
 
         this.position = position
-        this.node.send({
-            op: 'seek',
-            guildId: this.guildId,
-            position
-        })
+
+        await this.node.updatePlayer(this.guildId, { position: this.position })
 
         return this
+    }
+
+    public async setFilters(filters: PlayerFilters): Promise<PlayerData> {
+        return await this.node.updatePlayer(this.guildId, { filters })
     }
 }
 
@@ -437,26 +406,32 @@ export interface PlayerOptions {
 export interface Track {
     /** The base64 encoded track. */
     readonly track: string
-    /** The title of the track. */
-    readonly title: string
     /** The identifier of the track. */
     readonly identifier: string
+    /** If the track is seekable. */
+    readonly isSeekable: boolean
     /** The author of the track. */
     readonly author: string
     /** The duration of the track. */
     readonly duration: number
-    /** If the track is seekable. */
-    readonly isSeekable: boolean
     /** If the track is a stream.. */
     readonly isStream: boolean
+    /** The track position in milliseconds. */
+    readonly position: number
+    /** The title of the track. */
+    readonly title: string
     /** The uri of the track. */
     readonly uri: string
     /** The thumbnail of the track or null if it's a unsupported source. */
-    readonly thumbnail: string | null
+    readonly artworkUrl: string | null
+    /** The track ISRC. */
+    readonly isrc: string | null
+    /** The track source name. */
+    readonly sourceName: string
     /** The user that requested the track. */
     readonly requester: unknown | null
-    /** Displays the track thumbnail with optional size or null if it's a unsupported source. */
-    displayThumbnail(size?: Sizes): string
+    /** The timestamp when the track was builded. */
+    readonly buildedAt: number
 }
 
 /** Unresolved tracks can't be played normally, they will resolve before playing into a Track. */
@@ -473,16 +448,9 @@ export interface UnresolvedTrack extends Partial<Track> {
 
 export interface PlayOptions {
     /** The position to start the track. */
-    readonly startTime?: number
+    readonly position?: number
     /** The position to end the track. */
     readonly endTime?: number
     /** Whether to not replace the track if a play payload is sent. */
     readonly noReplace?: boolean
-}
-
-export interface EqualizerBand {
-    /** The band number being 0 to 14. */
-    band: number
-    /** The gain amount being -0.25 to 1.00, 0.25 being double. */
-    gain: number
 }

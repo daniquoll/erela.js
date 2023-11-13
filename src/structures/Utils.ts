@@ -7,8 +7,7 @@ import { Queue } from './Queue'
 /** @hidden */
 const TRACK_SYMBOL = Symbol('track'),
     /** @hidden */
-    UNRESOLVED_TRACK_SYMBOL = Symbol('unresolved'),
-    SIZES = ['0', '1', '2', '3', 'default', 'mqdefault', 'hqdefault', 'maxresdefault']
+    UNRESOLVED_TRACK_SYMBOL = Symbol('unresolved')
 
 /** @hidden */
 const escapeRegExp = (str: string): string => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -54,6 +53,7 @@ export abstract class TrackUtils {
      */
     static isUnresolvedTrack(track: unknown): boolean {
         if (typeof track === 'undefined') throw new RangeError('Provided argument must be present.')
+
         return track[UNRESOLVED_TRACK_SYMBOL] === true
     }
 
@@ -63,6 +63,7 @@ export abstract class TrackUtils {
      */
     static isTrack(track: unknown): boolean {
         if (typeof track === 'undefined') throw new RangeError('Provided argument must be present.')
+
         return track[TRACK_SYMBOL] === true
     }
 
@@ -77,26 +78,20 @@ export abstract class TrackUtils {
         try {
             const track: Track = {
                 track: data.encoded,
-                title: data.info.title,
                 identifier: data.info.identifier,
+                isSeekable: data.info.isSeekable,
                 author: data.info.author,
                 duration: data.info.length,
-                isSeekable: data.info.isSeekable,
                 isStream: data.info.isStream,
+                position: data.info.position,
+                title: data.info.title,
                 uri: data.info.uri,
-                thumbnail: data.info.uri.includes('youtube')
-                    ? `https://img.youtube.com/vi/${data.info.identifier}/default.jpg`
-                    : null,
-                displayThumbnail(size = 'default'): string | null {
-                    const finalSize = SIZES.find(s => s === size) ?? 'default'
-                    return this.uri.includes('youtube')
-                        ? `https://img.youtube.com/vi/${data.info.identifier}/${finalSize}.jpg`
-                        : null
-                },
-                requester
+                artworkUrl: data.info.artworkUrl,
+                isrc: data.info.isrc,
+                sourceName: data.info.sourceName,
+                requester,
+                buildedAt: Date.now()
             }
-
-            track.displayThumbnail = track.displayThumbnail.bind(track)
 
             if (this.trackPartial) {
                 for (const key of Object.keys(track)) {
@@ -222,20 +217,37 @@ export type TrackEndReason = 'FINISHED' | 'LOAD_FAILED' | 'STOPPED' | 'REPLACED'
 export type Severity = 'COMMON' | 'SUSPICIOUS' | 'FAULT'
 
 export interface TrackData {
+    /** The base64 encoded track data. */
     encoded: string
-    /** @deprecated */
-    track?: string
+    /** Info about the track. */
     info: TrackDataInfo
+    /** Addition track info provided by plugins */
+    pluginInfo?: object
 }
 
 export interface TrackDataInfo {
-    title: string
+    /** The track identifier. */
     identifier: string
-    author: string
-    length: number
+    /** Whether the track is seekable. */
     isSeekable: boolean
+    /** The track author. */
+    author: string
+    /** The track length in milliseconds. */
+    length: number
+    /** Whether the track is a stream. */
     isStream: boolean
-    uri: string
+    /** The track position in milliseconds. */
+    position: number
+    /** The track title. */
+    title: string
+    /** The track uri. */
+    uri: string | null
+    /** The track artwork url. */
+    artworkUrl: string | null
+    /** The track ISRC. */
+    isrc: string | null
+    /** The track source name. */
+    sourceName: string
 }
 
 export interface Extendable {

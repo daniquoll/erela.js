@@ -1,8 +1,7 @@
 /* eslint-disable no-async-promise-executor */
 import { Collection } from '@discordjs/collection'
 import { EventEmitter } from 'events'
-import { VoiceState } from '..'
-import { Node, NodeOptions } from './Node'
+import { Node, NodeOptions, TrackLoadingResult } from './Node'
 import { Player, PlayerOptions, Track, UnresolvedTrack } from './Player'
 import {
     LoadType,
@@ -14,6 +13,7 @@ import {
     TrackUtils,
     VoicePacket,
     VoiceServer,
+    VoiceState,
     WebSocketClosedEvent
 } from './Utils'
 
@@ -243,6 +243,7 @@ export class Manager extends EventEmitter {
         }
 
         this.initiated = true
+
         return this
     }
 
@@ -252,82 +253,46 @@ export class Manager extends EventEmitter {
      * @param requester
      * @returns The search result.
      */
-    public search(query: string | SearchQuery, requester?: unknown): Promise<SearchResult> {
-        return new Promise(async (resolve, reject) => {
-            const node = this.leastUsedNodes.first()
-            if (!node) throw new Error('No available nodes.')
+    public async search(query: string | SearchQuery, requester?: unknown): Promise<SearchResult> {
+        const node = this.leastUsedNodes.first()
 
-            const _query: SearchQuery = typeof query === 'string' ? { query } : query
-            const _source =
-                Manager.DEFAULT_SOURCES[_query.source ?? this.options.defaultSearchPlatform] ?? _query.source
+        if (!node) throw new Error('No available nodes.')
 
-            let search = _query.query
-            if (!/^https?:\/\//.test(search)) {
-                search = `${_source}:${search}`
+        const _query: SearchQuery = typeof query === 'string' ? { query } : query,
+            _source = Manager.DEFAULT_SOURCES[_query.source ?? this.options.defaultSearchPlatform] ?? _query.source
+
+        let search = _query.query
+
+        if (!/^https?:\/\//.test(search)) {
+            search = `${_source}:${search}`
+        }
+
+        let loadingResult: TrackLoadingResult
+
+        try {
+            loadingResult = await node.loadTracks(search)
+        } catch (err) {
+            throw new Error(`Failed to load tracks (${err.message}).`)
+        }
+
+        const result: SearchResult = {
+            loadType: loadingResult.loadType,
+            exception: loadingResult.exception ?? null,
+            tracks: loadingResult.tracks?.map((track: TrackData) => TrackUtils.build(track, requester)) ?? []
+        }
+
+        if (result.loadType === 'PLAYLIST_LOADED') {
+            result.playlist = {
+                name: loadingResult.playlistInfo.name,
+                selectedTrack:
+                    loadingResult.playlistInfo.selectedTrack === -1
+                        ? null
+                        : TrackUtils.build(loadingResult.tracks[loadingResult.playlistInfo.selectedTrack], requester),
+                duration: result.tracks.reduce((acc: number, cur: Track) => acc + (cur.duration || 0), 0)
             }
+        }
 
-            const res = await node
-                .makeRequest<LavalinkResult>(`/loadtracks?identifier=${encodeURIComponent(search)}`)
-                .catch(err => reject(err))
-
-            if (!res) {
-                return reject(new Error('Query not found.'))
-            }
-
-            const result: SearchResult = {
-                loadType: res.loadType,
-                exception: res.exception ?? null,
-                tracks: res.tracks?.map((track: TrackData) => TrackUtils.build(track, requester)) ?? []
-            }
-
-            if (result.loadType === 'PLAYLIST_LOADED') {
-                result.playlist = {
-                    name: res.playlistInfo.name,
-                    selectedTrack:
-                        res.playlistInfo.selectedTrack === -1
-                            ? null
-                            : TrackUtils.build(res.tracks[res.playlistInfo.selectedTrack], requester),
-                    duration: result.tracks.reduce((acc: number, cur: Track) => acc + (cur.duration || 0), 0)
-                }
-            }
-
-            return resolve(result)
-        })
-    }
-
-    /**
-     * Decodes the base64 encoded tracks and returns a TrackData array.
-     * @param tracks
-     */
-    public decodeTracks(tracks: string[]): Promise<TrackData[]> {
-        return new Promise(async (resolve, reject) => {
-            const node = this.nodes.first()
-            if (!node) throw new Error('No available nodes.')
-
-            const res = await node
-                .makeRequest<TrackData[]>(`/decodetracks`, r => {
-                    r.method = 'POST'
-                    r.body = JSON.stringify(tracks)
-                    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                    r.headers!['Content-Type'] = 'application/json'
-                })
-                .catch(err => reject(err))
-
-            if (!res) {
-                return reject(new Error('No data returned from query.'))
-            }
-
-            return resolve(res)
-        })
-    }
-
-    /**
-     * Decodes the base64 encoded track and returns a TrackData.
-     * @param track
-     */
-    public async decodeTrack(track: string): Promise<TrackData> {
-        const res = await this.decodeTracks([track])
-        return res[0]
+        return result
     }
 
     /**
@@ -377,6 +342,7 @@ export class Manager extends EventEmitter {
     public destroyNode(identifier: string): void {
         const node = this.nodes.get(identifier)
         if (!node) return
+
         node.destroy()
         this.nodes.delete(identifier)
     }
@@ -385,7 +351,7 @@ export class Manager extends EventEmitter {
      * Sends voice data to the Lavalink server.
      * @param data
      */
-    public updateVoiceState(data: VoicePacket | VoiceServer | VoiceState): void {
+    public async updateVoiceState(data: VoicePacket | VoiceServer | VoiceState): Promise<void> {
         if ('t' in data && !['VOICE_STATE_UPDATE', 'VOICE_SERVER_UPDATE'].includes(data.t)) return
 
         const update: VoiceServer | VoiceState = 'd' in data ? data.d : data
@@ -421,7 +387,13 @@ export class Manager extends EventEmitter {
         }
 
         if (['event', 'guildId', 'op', 'sessionId'].every(key => key in player.voiceState)) {
-            player.node.send(player.voiceState)
+            await player.node.updatePlayer(player.guildId, {
+                voice: {
+                    token: player.voiceState.event.token,
+                    endpoint: player.voiceState.event.endpoint,
+                    sessionId: player.voiceState.sessionId
+                }
+            })
         }
     }
 }
