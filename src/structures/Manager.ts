@@ -6,7 +6,6 @@ import { Node, NodeOptions } from './Node'
 import { Player, PlayerOptions, Track, UnresolvedTrack } from './Player'
 import {
     LoadType,
-    Structure,
     TrackData,
     TrackEndEvent,
     TrackExceptionEvent,
@@ -199,8 +198,8 @@ export class Manager extends EventEmitter {
 
         check(options)
 
-        Structure.get('Player').init(this)
-        Structure.get('Node').init(this)
+        Player.init(this)
+        Node.init(this)
         TrackUtils.init(this)
 
         if (options.trackPartial) {
@@ -218,7 +217,7 @@ export class Manager extends EventEmitter {
         }
 
         if (this.options.nodes) {
-            for (const nodeOptions of this.options.nodes) new (Structure.get('Node'))(nodeOptions)
+            for (const nodeOptions of this.options.nodes) new Node(nodeOptions)
         }
     }
 
@@ -340,7 +339,7 @@ export class Manager extends EventEmitter {
             return this.players.get(options.guildId)
         }
 
-        return new (Structure.get('Player'))(options)
+        return new Player(options)
     }
 
     /**
@@ -368,7 +367,7 @@ export class Manager extends EventEmitter {
             return this.nodes.get(options.identifier || options.host)
         }
 
-        return new (Structure.get('Node'))(options)
+        return new Node(options)
     }
 
     /**

@@ -1,7 +1,7 @@
 import { Manager, SearchQuery, SearchResult } from './Manager'
 import { Node } from './Node'
 import { Queue } from './Queue'
-import { Sizes, State, Structure, TrackUtils, VoiceState } from './Utils'
+import { State, TrackUtils, VoiceState } from './Utils'
 
 function check(options: PlayerOptions) {
     if (!options) throw new TypeError('PlayerOptions must not be empty.')
@@ -30,7 +30,7 @@ function check(options: PlayerOptions) {
 
 export class Player {
     /** The Queue for the Player. */
-    public readonly queue = new (Structure.get('Queue'))() as Queue
+    public readonly queue = new Queue()
     /** Whether the queue repeats the track. */
     public trackRepeat = false
     /** Whether the queue repeats the queue. */
@@ -89,7 +89,7 @@ export class Player {
      * @param options
      */
     constructor(public options: PlayerOptions) {
-        if (!this.manager) this.manager = Structure.get('Player')._manager
+        if (!this.manager) this.manager = Player._manager
         if (!this.manager) throw new RangeError('Manager has not been initiated.')
 
         if (this.manager.players.has(options.guildId)) {

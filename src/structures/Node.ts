@@ -6,7 +6,7 @@ import { Player, Track, UnresolvedTrack } from './Player'
 import {
     PlayerEvent,
     PlayerEvents,
-    Structure,
+    TrackData,
     TrackEndEvent,
     TrackExceptionEvent,
     TrackStartEvent,
@@ -82,7 +82,7 @@ export class Node {
      * @param options
      */
     constructor(public options: NodeOptions) {
-        if (!this.manager) this.manager = Structure.get('Node')._manager
+        if (!this.manager) this.manager = Node._manager
         if (!this.manager) throw new RangeError('Manager has not been initiated.')
 
         if (this.manager.nodes.has(options.identifier || options.host)) {
