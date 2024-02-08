@@ -2,19 +2,13 @@
 
 ## Documentation & Guides
 
--   [Documentation](https://erelajs-docs.netlify.app/docs/gettingstarted.html 'Erela.js Documentation')
-
--   [Guides](https://erelajs-docs.netlify.app/guides/introduction.html 'Erela.js Guides')
+-   [Documentation](https://guides.menudocs.org/topics/erelajs/basics.html 'Erela.js Documentation')
 
 ## Prerequisites
 
 -   Java - [Azul](https://www.azul.com/downloads/zulu-community/?architecture=x86-64-bit&package=jdk 'Download Azul OpenJDK'), [Adopt](https://adoptopenjdk.net/ 'Download Adopt OpenJDK') or [sdkman](https://sdkman.io/install 'Download sdkman')
 
--   [Lavalink](https://github.com/lavalink-devs/Lavalink/releases 'Download Lavalink')
-
-**Note**: _Java v11 or newer is required to run the Lavalink.jar. Java v13 is recommended._ If you are using **sdkman** then _its a manager, not Java, you have to install sdkman and use sdkman to install Java_
-
-**Warning**: Java v14 has issues with Lavalink.
+-   [Lavalink](https://github.com/lavalink-devs/Lavalink/releases 'Download Lavalink') ([requirements](https://github.com/lavalink-devs/Lavalink?tab=readme-ov-file#requirements))
 
 ## Installation
 
@@ -26,13 +20,64 @@ npm install daniquoll/erela.js
 
 ## Getting Started
 
--   Create an application.yml file in your working directory and copy the [example](https://github.com/lavalink-devs/Lavalink/blob/master/LavalinkServer/application.yml.example 'application.yml file') into the created file and edit it with your configuration.
+-   Create an application.yml file in your working directory and copy the [example](https://lavalink.dev/configuration/#example-applicationyml 'application.yml file') into the created file and edit it with your configuration.
 
 -   Run the jar file by running `java -jar Lavalink.jar` in a Terminal window.
 
 ## Example usage
 
-Please read the guides to start: <https://erelajs-docs.netlify.app/docs/gettingstarted.html#example-usage>
+```js
+// Require both libraries
+const { Client } = require('discord.js')
+const { Manager } = require('erela.js')
+
+// Initiate both main classes
+const client = new Client()
+
+// Define some options for the node
+const nodes = [
+    {
+        host: 'localhost',
+        password: 'youshallnotpass',
+        port: 2333
+    }
+]
+
+// Assign Manager to the client variable
+client.manager = new Manager({
+    // The nodes to connect to, optional if using default lavalink options
+    nodes,
+    // Method to send voice data to Discord
+    send: (id, payload) => {
+        const guild = client.guilds.cache.get(id)
+        // NOTE: FOR ERIS YOU NEED JSON.stringify() THE PAYLOAD
+        if (guild) guild.shard.send(payload)
+    }
+})
+
+// Emitted whenever a node connects
+client.manager.on('nodeConnect', node => {
+    console.log(`Node "${node.options.identifier}" connected.`)
+})
+
+// Emitted whenever a node encountered an error
+client.manager.on('nodeError', (node, error) => {
+    console.log(`Node "${node.options.identifier}" encountered an error: ${error.message}.`)
+})
+
+// Listen for when the client becomes ready
+client.once('ready', () => {
+    // Initiates the manager and connects to all the nodes
+    client.manager.init(client.user.id)
+    console.log(`Logged in as ${client.user.tag}`)
+})
+
+// THIS IS REQUIRED. Send raw events to Erela.js
+client.on('raw', d => client.manager.updateVoiceState(d))
+
+// Finally login at the END of your code
+client.login('your bot token here')
+```
 
 ## Contributors
 
