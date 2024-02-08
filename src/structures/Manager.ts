@@ -1,21 +1,18 @@
-/* eslint-disable no-async-promise-executor */
 import { Collection } from '@discordjs/collection'
 import { EventEmitter } from 'events'
-import { Node, NodeOptions, TrackLoadingResult } from './Node'
-import { Player, PlayerOptions, Track, UnresolvedTrack } from './Player'
 import {
-    LoadType,
-    TrackData,
+    LoadResultType,
+    Node,
+    NodeOptions,
     TrackEndEvent,
     TrackExceptionEvent,
+    TrackLoadingResult,
     TrackStartEvent,
     TrackStuckEvent,
-    TrackUtils,
-    VoicePacket,
-    VoiceServer,
-    VoiceState,
     WebSocketClosedEvent
-} from './Utils'
+} from './Node'
+import { Player, PlayerOptions, PlayerTrack, UnresolvedPlayerTrack } from './Player'
+import { TrackUtils } from './Utils'
 
 function check(options: ManagerOptions) {
     if (!options) throw new TypeError('ManagerOptions must not be empty.')
@@ -105,7 +102,7 @@ export interface Manager {
      */
     on(
         event: 'queueEnd',
-        listener: (player: Player, track: Track | UnresolvedTrack, payload: TrackEndEvent) => void
+        listener: (player: Player, track: PlayerTrack | UnresolvedPlayerTrack, payload: TrackEndEvent) => void
     ): this
 
     /**
@@ -124,19 +121,19 @@ export interface Manager {
      * Emitted when a track starts.
      * @event Manager#trackStart
      */
-    on(event: 'trackStart', listener: (player: Player, track: Track, payload: TrackStartEvent) => void): this
+    on(event: 'trackStart', listener: (player: Player, track: PlayerTrack, payload: TrackStartEvent) => void): this
 
     /**
      * Emitted when a track ends.
      * @event Manager#trackEnd
      */
-    on(event: 'trackEnd', listener: (player: Player, track: Track, payload: TrackEndEvent) => void): this
+    on(event: 'trackEnd', listener: (player: Player, track: PlayerTrack, payload: TrackEndEvent) => void): this
 
     /**
      * Emitted when a track gets stuck during playback.
      * @event Manager#trackStuck
      */
-    on(event: 'trackStuck', listener: (player: Player, track: Track, payload: TrackStuckEvent) => void): this
+    on(event: 'trackStuck', listener: (player: Player, track: PlayerTrack, payload: TrackStuckEvent) => void): this
 
     /**
      * Emitted when a track has an error during playback.
@@ -144,7 +141,7 @@ export interface Manager {
      */
     on(
         event: 'trackError',
-        listener: (player: Player, track: Track | UnresolvedTrack, payload: TrackExceptionEvent) => void
+        listener: (player: Player, track: PlayerTrack | UnresolvedPlayerTrack, payload: TrackExceptionEvent) => void
     ): this
 
     /**
@@ -277,19 +274,32 @@ export class Manager extends EventEmitter {
 
         const result: SearchResult = {
             loadType: loadingResult.loadType,
-            exception: loadingResult.exception ?? null,
-            tracks: loadingResult.tracks?.map((track: TrackData) => TrackUtils.build(track, requester)) ?? []
+            tracks: []
         }
 
-        if (result.loadType === 'PLAYLIST_LOADED') {
+        if (loadingResult.loadType === 'track') {
+            result.tracks = [TrackUtils.build(loadingResult.data, requester)]
+        }
+
+        if (loadingResult.loadType === 'playlist') {
+            result.tracks = loadingResult.data.tracks.map(i => TrackUtils.build(i, requester))
+
             result.playlist = {
-                name: loadingResult.playlistInfo.name,
+                name: loadingResult.data.info.name,
                 selectedTrack:
-                    loadingResult.playlistInfo.selectedTrack === -1
+                    loadingResult.data.info.selectedTrack === -1
                         ? null
-                        : TrackUtils.build(loadingResult.tracks[loadingResult.playlistInfo.selectedTrack], requester),
-                duration: result.tracks.reduce((acc: number, cur: Track) => acc + (cur.duration || 0), 0)
+                        : TrackUtils.build(loadingResult.data.tracks[loadingResult.data.info.selectedTrack], requester),
+                duration: result.tracks.reduce((acc: number, cur: PlayerTrack) => acc + (cur.duration || 0), 0)
             }
+        }
+
+        if (loadingResult.loadType === 'search') {
+            result.tracks = loadingResult.data.map(i => TrackUtils.build(i, requester))
+        }
+
+        if (loadingResult.loadType === 'error') {
+            result.exception = loadingResult.data
         }
 
         return result
@@ -351,10 +361,10 @@ export class Manager extends EventEmitter {
      * Sends voice data to the Lavalink server.
      * @param data
      */
-    public async updateVoiceState(data: VoicePacket | VoiceServer | VoiceState): Promise<void> {
+    public async updateVoiceState(data: DiscordVoicePacket): Promise<void> {
         if ('t' in data && !['VOICE_STATE_UPDATE', 'VOICE_SERVER_UPDATE'].includes(data.t)) return
 
-        const update: VoiceServer | VoiceState = 'd' in data ? data.d : data
+        const update: DiscordVoiceServer | DiscordVoiceState = data.d
         if (!update || (!('token' in update) && !('session_id' in update))) return
 
         const player = this.players.get(update.guild_id) as Player
@@ -362,7 +372,8 @@ export class Manager extends EventEmitter {
 
         if ('token' in update) {
             /* voice server update */
-            player.voiceState.event = update
+            player.voiceState.token = update.token
+            player.voiceState.endpoint = update.endpoint
         } else {
             /* voice state update */
             if (update.user_id !== this.options.clientId) {
@@ -386,26 +397,15 @@ export class Manager extends EventEmitter {
             }
         }
 
-        if (['event', 'guildId', 'op', 'sessionId'].every(key => key in player.voiceState)) {
+        if (['token', 'endpoint', 'sessionId'].every(key => key in player.voiceState)) {
             await player.node.updatePlayer(player.guildId, {
                 voice: {
-                    token: player.voiceState.event.token,
-                    endpoint: player.voiceState.event.endpoint,
+                    token: player.voiceState.token,
+                    endpoint: player.voiceState.endpoint,
                     sessionId: player.voiceState.sessionId
                 }
             })
         }
-    }
-}
-
-export interface Payload {
-    /** The OP code */
-    op: number
-    d: {
-        guild_id: string
-        channel_id: string | null
-        self_mute: boolean
-        self_deaf: boolean
     }
 }
 
@@ -432,7 +432,16 @@ export interface ManagerOptions {
     send(id: string, payload: Payload): void
 }
 
-export type SearchPlatform = 'youtube' | 'youtube music' | 'soundcloud'
+export interface Payload {
+    /** The OP code */
+    op: number
+    d: {
+        guild_id: string
+        channel_id: string | null
+        self_mute: boolean
+        self_deaf: boolean
+    }
+}
 
 export interface SearchQuery {
     /** The source to search from. */
@@ -441,13 +450,15 @@ export interface SearchQuery {
     query: string
 }
 
+export type SearchPlatform = 'youtube' | 'youtube music' | 'soundcloud'
+
 export interface SearchResult {
     /** The load type of the result. */
-    loadType: LoadType
+    loadType: LoadResultType
     /** The array of tracks from the result. */
-    tracks: Track[]
-    /** The playlist info if the load type is PLAYLIST_LOADED. */
-    playlist?: PlaylistInfo
+    tracks: PlayerTrack[]
+    /** The playlist info if the load type is "playlist". */
+    playlist?: PlaylistResultInfo
     /** The exception when searching if one. */
     exception?: {
         /** The message for the exception. */
@@ -457,26 +468,29 @@ export interface SearchResult {
     }
 }
 
-export interface PlaylistInfo {
+export interface PlaylistResultInfo {
     /** The playlist name. */
     name: string
     /** The playlist selected track. */
-    selectedTrack?: Track
+    selectedTrack?: PlayerTrack
     /** The duration of the playlist. */
     duration: number
 }
 
-export interface LavalinkResult {
-    tracks: TrackData[]
-    loadType: LoadType
-    exception?: {
-        /** The message for the exception. */
-        message: string
-        /** The severity of exception. */
-        severity: string
-    }
-    playlistInfo: {
-        name: string
-        selectedTrack?: number
-    }
+export interface DiscordVoicePacket {
+    t?: 'VOICE_SERVER_UPDATE' | 'VOICE_STATE_UPDATE'
+    d: DiscordVoiceState | DiscordVoiceServer
+}
+
+export interface DiscordVoiceServer {
+    token: string
+    guild_id: string
+    endpoint: string
+}
+
+export interface DiscordVoiceState {
+    guild_id: string
+    user_id: string
+    session_id: string
+    channel_id: string
 }

@@ -1,7 +1,7 @@
 import { Manager, SearchQuery, SearchResult } from './Manager'
-import { Node, PlayerData, PlayerFilters } from './Node'
+import { Filters, Node, NodePlayer, VoiceState } from './Node'
 import { Queue } from './Queue'
-import { State, TrackUtils, VoiceState } from './Utils'
+import { TrackUtils } from './Utils'
 
 function check(options: PlayerOptions) {
     if (!options) throw new TypeError('PlayerOptions must not be empty.')
@@ -100,7 +100,7 @@ export class Player {
         check(options)
 
         this.guildId = options.guildId
-        this.voiceState = Object.assign({ op: 'voiceUpdate', guildId: options.guildId })
+        this.voiceState = Object.assign({})
 
         if (options.voiceChannelId) this.voiceChannelId = options.voiceChannelId
         if (options.textChannelId) this.textChannelId = options.textChannelId
@@ -207,33 +207,33 @@ export class Player {
     }
 
     /** Plays the next track. */
-    public async play(): Promise<PlayerData>
+    public async play(): Promise<NodePlayer>
 
     /**
      * Plays the specified track.
      * @param track
      */
-    public async play(track: Track | UnresolvedTrack): Promise<PlayerData>
+    public async play(track: PlayerTrack | UnresolvedPlayerTrack): Promise<NodePlayer>
 
     /**
      * Plays the next track with some options.
      * @param options
      */
-    public async play(options: PlayOptions): Promise<PlayerData>
+    public async play(options: PlayOptions): Promise<NodePlayer>
 
     /**
      * Plays the specified track with some options.
      * @param track
      * @param options
      */
-    public async play(track: Track | UnresolvedTrack, options: PlayOptions): Promise<PlayerData>
+    public async play(track: PlayerTrack | UnresolvedPlayerTrack, options: PlayOptions): Promise<NodePlayer>
     public async play(
-        optionsOrTrack?: PlayOptions | Track | UnresolvedTrack,
+        optionsOrTrack?: PlayOptions | PlayerTrack | UnresolvedPlayerTrack,
         playOptions?: PlayOptions
-    ): Promise<PlayerData> {
+    ): Promise<NodePlayer> {
         if (typeof optionsOrTrack !== 'undefined' && TrackUtils.validate(optionsOrTrack)) {
             if (this.queue.current) this.queue.previous = this.queue.current
-            this.queue.current = optionsOrTrack as Track
+            this.queue.current = optionsOrTrack as PlayerTrack
         }
 
         if (!this.queue.current) throw new RangeError('No current track.')
@@ -246,7 +246,7 @@ export class Player {
 
         if (TrackUtils.isUnresolvedTrack(this.queue.current)) {
             try {
-                this.queue.current = await TrackUtils.getClosestTrack(this.queue.current as UnresolvedTrack)
+                this.queue.current = await TrackUtils.getClosestTrack(this.queue.current as UnresolvedPlayerTrack)
             } catch (err) {
                 this.manager.emit('trackError', this, this.queue.current, err)
                 if (this.queue[0]) return this.play(this.queue[0])
@@ -257,7 +257,7 @@ export class Player {
         let track = this.queue.current.track
 
         if (typeof track !== 'string') {
-            track = (track as Track).track
+            track = (track as PlayerTrack).track
         }
 
         return await this.node.updatePlayer(
@@ -380,7 +380,7 @@ export class Player {
         return this
     }
 
-    public async setFilters(filters: PlayerFilters): Promise<PlayerData> {
+    public async setFilters(filters: Filters): Promise<NodePlayer> {
         return await this.node.updatePlayer(this.guildId, { filters })
     }
 }
@@ -402,8 +402,10 @@ export interface PlayerOptions {
     selfDeafen?: boolean
 }
 
+export type State = 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'DISCONNECTING' | 'DESTROYING'
+
 /** If track partials are set some of these will be `undefined` as they were removed. */
-export interface Track {
+export interface PlayerTrack {
     /** The base64 encoded track. */
     readonly track: string
     /** The identifier of the track. */
@@ -435,7 +437,7 @@ export interface Track {
 }
 
 /** Unresolved tracks can't be played normally, they will resolve before playing into a Track. */
-export interface UnresolvedTrack extends Partial<Track> {
+export interface UnresolvedPlayerTrack extends Partial<PlayerTrack> {
     /** The title to search against. */
     title: string
     /** The author to search against. */

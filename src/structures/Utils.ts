@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires*/
 import { Manager } from './Manager'
-import { Node, NodeStats } from './Node'
-import { Player, Track, UnresolvedTrack } from './Player'
-import { Queue } from './Queue'
+import { Track } from './Node'
+import { PlayerTrack, UnresolvedPlayerTrack } from './Player'
 
 /** @hidden */
 const TRACK_SYMBOL = Symbol('track'),
@@ -72,11 +70,11 @@ export abstract class TrackUtils {
      * @param data
      * @param requester
      */
-    static build(data: TrackData, requester?: unknown): Track {
+    static build(data: Track, requester?: unknown): PlayerTrack {
         if (typeof data === 'undefined') throw new RangeError('Argument "data" must be present.')
 
         try {
-            const track: Track = {
+            const track: PlayerTrack = {
                 track: data.encoded,
                 identifier: data.info.identifier,
                 isSeekable: data.info.isSeekable,
@@ -116,10 +114,10 @@ export abstract class TrackUtils {
      * @param query
      * @param requester
      */
-    static buildUnresolved(query: string | UnresolvedQuery, requester?: unknown): UnresolvedTrack {
+    static buildUnresolved(query: string | UnresolvedQuery, requester?: unknown): UnresolvedPlayerTrack {
         if (typeof query === 'undefined') throw new RangeError('Argument "query" must be present.')
 
-        let unresolvedTrack: Partial<UnresolvedTrack> = {
+        let unresolvedTrack: Partial<UnresolvedPlayerTrack> = {
             requester,
             async resolve(): Promise<void> {
                 const resolved = await TrackUtils.getClosestTrack(this)
@@ -136,10 +134,10 @@ export abstract class TrackUtils {
             value: true
         })
 
-        return unresolvedTrack as UnresolvedTrack
+        return unresolvedTrack as UnresolvedPlayerTrack
     }
 
-    static async getClosestTrack(unresolvedTrack: UnresolvedTrack): Promise<Track> {
+    static async getClosestTrack(unresolvedTrack: UnresolvedPlayerTrack): Promise<PlayerTrack> {
         if (!TrackUtils.manager) throw new RangeError('Manager has not been initiated.')
 
         if (!TrackUtils.isUnresolvedTrack(unresolvedTrack))
@@ -148,11 +146,11 @@ export abstract class TrackUtils {
         const query = [unresolvedTrack.author, unresolvedTrack.title].filter(str => !!str).join(' - ')
         const res = await TrackUtils.manager.search(query, unresolvedTrack.requester)
 
-        if (res.loadType !== 'SEARCH_RESULT')
+        if (res.loadType !== 'search')
             throw (
                 res.exception ?? {
                     message: 'No tracks found.',
-                    severity: 'COMMON'
+                    severity: 'common'
                 }
             )
 
@@ -190,149 +188,4 @@ export interface UnresolvedQuery {
     author?: string
     /** The duration of the unresolved track. If provided it will have a more precise search. */
     duration?: number
-}
-
-export type Sizes = '0' | '1' | '2' | '3' | 'default' | 'mqdefault' | 'hqdefault' | 'maxresdefault'
-
-export type LoadType = 'TRACK_LOADED' | 'PLAYLIST_LOADED' | 'SEARCH_RESULT' | 'LOAD_FAILED' | 'NO_MATCHES'
-
-export type State = 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'DISCONNECTING' | 'DESTROYING'
-
-export type PlayerEvents =
-    | TrackStartEvent
-    | TrackEndEvent
-    | TrackStuckEvent
-    | TrackExceptionEvent
-    | WebSocketClosedEvent
-
-export type PlayerEventType =
-    | 'TrackStartEvent'
-    | 'TrackEndEvent'
-    | 'TrackExceptionEvent'
-    | 'TrackStuckEvent'
-    | 'WebSocketClosedEvent'
-
-export type TrackEndReason = 'FINISHED' | 'LOAD_FAILED' | 'STOPPED' | 'REPLACED' | 'CLEANUP'
-
-export type Severity = 'COMMON' | 'SUSPICIOUS' | 'FAULT'
-
-export interface TrackData {
-    /** The base64 encoded track data. */
-    encoded: string
-    /** Info about the track. */
-    info: TrackDataInfo
-    /** Addition track info provided by plugins */
-    pluginInfo?: object
-}
-
-export interface TrackDataInfo {
-    /** The track identifier. */
-    identifier: string
-    /** Whether the track is seekable. */
-    isSeekable: boolean
-    /** The track author. */
-    author: string
-    /** The track length in milliseconds. */
-    length: number
-    /** Whether the track is a stream. */
-    isStream: boolean
-    /** The track position in milliseconds. */
-    position: number
-    /** The track title. */
-    title: string
-    /** The track uri. */
-    uri: string | null
-    /** The track artwork url. */
-    artworkUrl: string | null
-    /** The track ISRC. */
-    isrc: string | null
-    /** The track source name. */
-    sourceName: string
-}
-
-export interface Extendable {
-    Player: typeof Player
-    Queue: typeof Queue
-    Node: typeof Node
-}
-
-export interface VoiceState {
-    op: 'voiceUpdate'
-    guildId: string
-    event: VoiceServer
-    sessionId?: string
-}
-
-export interface VoiceServer {
-    token: string
-    guild_id: string
-    endpoint: string
-}
-
-export interface VoiceState {
-    guild_id: string
-    user_id: string
-    session_id: string
-    channel_id: string
-}
-
-export interface VoicePacket {
-    t?: 'VOICE_SERVER_UPDATE' | 'VOICE_STATE_UPDATE'
-    d: VoiceState | VoiceServer
-}
-
-export interface NodeMessage extends NodeStats {
-    type: PlayerEventType
-    op: 'stats' | 'playerUpdate' | 'event'
-    guildId: string
-}
-
-export interface PlayerEvent {
-    op: 'event'
-    type: PlayerEventType
-    guildId: string
-}
-
-export interface Exception {
-    severity: Severity
-    message: string
-    cause: string
-}
-
-export interface TrackStartEvent extends PlayerEvent {
-    type: 'TrackStartEvent'
-    track: string
-}
-
-export interface TrackEndEvent extends PlayerEvent {
-    type: 'TrackEndEvent'
-    track: string
-    reason: TrackEndReason
-}
-
-export interface TrackExceptionEvent extends PlayerEvent {
-    type: 'TrackExceptionEvent'
-    exception?: Exception
-    error: string
-}
-
-export interface TrackStuckEvent extends PlayerEvent {
-    type: 'TrackStuckEvent'
-    thresholdMs: number
-}
-
-export interface WebSocketClosedEvent extends PlayerEvent {
-    type: 'WebSocketClosedEvent'
-    code: number
-    byRemote: boolean
-    reason: string
-}
-
-export interface PlayerUpdate {
-    op: 'playerUpdate'
-    state: {
-        position: number
-        time: number
-    }
-    guildId: string
 }

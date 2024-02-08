@@ -1,16 +1,16 @@
-import { Track, UnresolvedTrack } from './Player'
+import { PlayerTrack, UnresolvedPlayerTrack } from './Player'
 import { TrackUtils } from './Utils'
 
 /**
  * The player's queue, the `current` property is the currently playing track, think of the rest as the up-coming tracks.
  * @noInheritDoc
  */
-export class Queue extends Array<Track | UnresolvedTrack> {
+export class Queue extends Array<PlayerTrack | UnresolvedPlayerTrack> {
     /** The total duration of the queue. */
     public get duration(): number {
         const current = this.current?.duration ?? 0
 
-        return this.reduce((acc: number, cur: Track) => acc + (cur.duration || 0), current)
+        return this.reduce((acc: number, cur: PlayerTrack) => acc + (cur.duration || 0), current)
     }
 
     /** The total size of tracks in the queue including the current track. */
@@ -24,17 +24,20 @@ export class Queue extends Array<Track | UnresolvedTrack> {
     }
 
     /** The current track */
-    public current: Track | UnresolvedTrack | null = null
+    public current: PlayerTrack | UnresolvedPlayerTrack | null = null
 
     /** The previous track */
-    public previous: Track | UnresolvedTrack | null = null
+    public previous: PlayerTrack | UnresolvedPlayerTrack | null = null
 
     /**
      * Adds a track to the queue.
      * @param track
      * @param [offset=null]
      */
-    public add(track: (Track | UnresolvedTrack) | (Track | UnresolvedTrack)[], offset?: number): Queue {
+    public add(
+        track: (PlayerTrack | UnresolvedPlayerTrack) | (PlayerTrack | UnresolvedPlayerTrack)[],
+        offset?: number
+    ): Queue {
         if (!TrackUtils.validate(track)) {
             throw new RangeError('Track must be a "Track" or "Track[]".')
         }
@@ -74,15 +77,15 @@ export class Queue extends Array<Track | UnresolvedTrack> {
      * Removes a track from the queue. Defaults to the first track, returning the removed track, EXCLUDING THE `current` TRACK.
      * @param [position=0]
      */
-    public remove(position?: number): Track[]
+    public remove(position?: number): PlayerTrack[]
 
     /**
      * Removes an amount of tracks using a exclusive start and end exclusive index, returning the removed tracks, EXCLUDING THE `current` TRACK.
      * @param start
      * @param end
      */
-    public remove(start: number, end: number): (Track | UnresolvedTrack)[]
-    public remove(startOrPosition = 0, end?: number): (Track | UnresolvedTrack)[] {
+    public remove(start: number, end: number): (PlayerTrack | UnresolvedPlayerTrack)[]
+    public remove(startOrPosition = 0, end?: number): (PlayerTrack | UnresolvedPlayerTrack)[] {
         if (typeof end !== 'undefined') {
             if (isNaN(Number(startOrPosition))) {
                 throw new RangeError(`Missing "start" parameter.`)
