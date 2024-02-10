@@ -437,7 +437,7 @@ export class Node {
 
     protected trackEnd(player: Player, track: PlayerTrack, payload: TrackEndEvent): void {
         // If a track had an error while starting
-        if (['LOAD_FAILED', 'CLEAN_UP'].includes(payload.reason)) {
+        if (['loadFailed', 'cleanup'].includes(payload.reason)) {
             player.queue.previous = player.queue.current
             player.queue.current = player.queue.shift()
 
