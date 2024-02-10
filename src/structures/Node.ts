@@ -2,18 +2,7 @@
 import { Dispatcher, Pool } from 'undici'
 import WebSocket from 'ws'
 import { Manager } from './Manager'
-import { Player, Track, UnresolvedTrack } from './Player'
-import {
-    LoadType,
-    PlayerEvent,
-    PlayerEvents,
-    TrackData,
-    TrackEndEvent,
-    TrackExceptionEvent,
-    TrackStartEvent,
-    TrackStuckEvent,
-    WebSocketClosedEvent
-} from './Utils'
+import { Player, PlayerTrack, UnresolvedPlayerTrack } from './Player'
 
 function check(options: NodeOptions) {
     if (!options) throw new TypeError('NodeOptions must not be empty.')
@@ -131,7 +120,7 @@ export class Node {
             }
         }
 
-        this.version = options.version ?? 'v3'
+        this.version = options.version ?? 'v4'
 
         this.manager.nodes.set(this.options.identifier, this)
         this.manager.emit('nodeCreate', this)
@@ -207,7 +196,7 @@ export class Node {
     /**
      * Returns a list of players in this specific session.
      */
-    public async getPlayers(): Promise<PlayerData[]> {
+    public async getPlayers(): Promise<NodePlayer[]> {
         try {
             return await this.makeRequest(`/sessions/${this.sessionId}/players`)
         } catch (err) {
@@ -219,7 +208,7 @@ export class Node {
      * Returns the player for this guild in this session.
      * @param guildId
      */
-    public async getPlayer(guildId: string): Promise<PlayerData> {
+    public async getPlayer(guildId: string): Promise<NodePlayer> {
         try {
             return await this.makeRequest(`/sessions/${this.sessionId}/players/${guildId}`)
         } catch (err) {
@@ -232,7 +221,7 @@ export class Node {
      * @param guildId
      * @param data
      */
-    public async updatePlayer(guildId: string, data: PlayerUpdateData, noReplace = false): Promise<PlayerData> {
+    public async updatePlayer(guildId: string, data: UpdatePlayer, noReplace = false): Promise<NodePlayer> {
         try {
             return await this.makeRequest(
                 `/sessions/${this.sessionId}/players/${guildId}?noReplace=${!!noReplace}`,
@@ -265,7 +254,7 @@ export class Node {
      * Updates the session with the resuming state and timeout.
      * @param data
      */
-    public async updateSession(data: SessionData): Promise<SessionData> {
+    public async updateSession(data: UpdateSession): Promise<UpdateSession> {
         try {
             return await this.makeRequest(`/sessions/${this.sessionId}`, request => {
                 request.method = 'PATCH'
@@ -293,7 +282,7 @@ export class Node {
      * Decode a single track into its info, where BASE64 is the encoded base64 data.
      * @param encodedTrack
      */
-    public async decodeTrack(encodedTrack: string): Promise<TrackData> {
+    public async decodeTrack(encodedTrack: string): Promise<Track> {
         try {
             return await this.makeRequest(`/decodetrack?encodedTrack=${encodeURIComponent(encodedTrack)}`)
         } catch (err) {
@@ -305,7 +294,7 @@ export class Node {
      * Decodes multiple tracks into their info.
      * @param encodedTracks
      */
-    public async decodeTracks(encodedTracks: string[]): Promise<TrackData[]> {
+    public async decodeTracks(encodedTracks: string[]): Promise<Track[]> {
         try {
             return await this.makeRequest('/decodetracks', request => {
                 request.method = 'POST'
@@ -325,6 +314,17 @@ export class Node {
             return await this.makeRequest('/info')
         } catch (err) {
             throw new Error(`[Node#getInfo]`, { cause: err })
+        }
+    }
+
+    /**
+     * Request Lavalink information.
+     */
+    public async getVersion(): Promise<NodeVersion> {
+        try {
+            return await this.makeRequest('/version', options => (options.path = options.path.replace(/^\/v\d+/, '')))
+        } catch (err) {
+            throw new Error(`[Node#getVersion]`, { cause: err })
         }
     }
 
@@ -405,7 +405,7 @@ export class Node {
         }
     }
 
-    protected handleEvent(payload: PlayerEvent & PlayerEvents): void {
+    protected handleEvent(payload: NodeEventOP & NodeEvents): void {
         if (!payload.guildId) return
 
         const player = this.manager.players.get(payload.guildId)
@@ -415,11 +415,11 @@ export class Node {
         const type = payload.type
 
         if (payload.type === 'TrackStartEvent') {
-            this.trackStart(player, track as Track, payload)
+            this.trackStart(player, track as PlayerTrack, payload)
         } else if (payload.type === 'TrackEndEvent') {
-            this.trackEnd(player, track as Track, payload)
+            this.trackEnd(player, track as PlayerTrack, payload)
         } else if (payload.type === 'TrackStuckEvent') {
-            this.trackStuck(player, track as Track, payload)
+            this.trackStuck(player, track as PlayerTrack, payload)
         } else if (payload.type === 'TrackExceptionEvent') {
             this.trackError(player, track, payload)
         } else if (payload.type === 'WebSocketClosedEvent') {
@@ -429,15 +429,15 @@ export class Node {
         }
     }
 
-    protected trackStart(player: Player, track: Track, payload: TrackStartEvent): void {
+    protected trackStart(player: Player, track: PlayerTrack, payload: TrackStartEvent): void {
         player.playing = true
         player.paused = false
         this.manager.emit('trackStart', player, track, payload)
     }
 
-    protected trackEnd(player: Player, track: Track, payload: TrackEndEvent): void {
+    protected trackEnd(player: Player, track: PlayerTrack, payload: TrackEndEvent): void {
         // If a track had an error while starting
-        if (['LOAD_FAILED', 'CLEAN_UP'].includes(payload.reason)) {
+        if (['loadFailed', 'cleanup'].includes(payload.reason)) {
             player.queue.previous = player.queue.current
             player.queue.current = player.queue.shift()
 
@@ -450,14 +450,14 @@ export class Node {
         }
 
         // If a track was forcibly played
-        if (payload.reason === 'REPLACED') {
+        if (payload.reason === 'replaced') {
             this.manager.emit('trackEnd', player, track, payload)
             return
         }
 
         // If a track ended and is track repeating
         if (track && player.trackRepeat) {
-            if (payload.reason === 'STOPPED') {
+            if (payload.reason === 'stopped') {
                 player.queue.previous = player.queue.current
                 player.queue.current = player.queue.shift()
             }
@@ -474,7 +474,7 @@ export class Node {
         if (track && player.queueRepeat) {
             player.queue.previous = player.queue.current
 
-            if (payload.reason === 'STOPPED') {
+            if (payload.reason === 'stopped') {
                 player.queue.current = player.queue.shift()
                 if (!player.queue.current) return this.queueEnd(player, track, payload)
             } else {
@@ -503,18 +503,22 @@ export class Node {
         if (!player.queue.length) return this.queueEnd(player, track, payload)
     }
 
-    protected queueEnd(player: Player, track: Track, payload: TrackEndEvent): void {
+    protected queueEnd(player: Player, track: PlayerTrack, payload: TrackEndEvent): void {
         player.queue.current = null
         player.playing = false
         this.manager.emit('queueEnd', player, track, payload)
     }
 
-    protected trackStuck(player: Player, track: Track, payload: TrackStuckEvent): void {
+    protected trackStuck(player: Player, track: PlayerTrack, payload: TrackStuckEvent): void {
         player.stop()
         this.manager.emit('trackStuck', player, track, payload)
     }
 
-    protected trackError(player: Player, track: Track | UnresolvedTrack, payload: TrackExceptionEvent): void {
+    protected trackError(
+        player: Player,
+        track: PlayerTrack | UnresolvedPlayerTrack,
+        payload: TrackExceptionEvent
+    ): void {
         player.stop()
         this.manager.emit('trackError', player, track, payload)
     }
@@ -523,9 +527,6 @@ export class Node {
         this.manager.emit('socketClosed', player, payload)
     }
 }
-
-/** Modifies any outgoing REST requests. */
-export type ModifyRequest = (options: Dispatcher.RequestOptions) => void
 
 export interface NodeOptions {
     /** The host for the node. */
@@ -547,57 +548,42 @@ export interface NodeOptions {
     /** Options for the undici http pool used for http requests. */
     poolOptions?: Pool.Options
     /** The Lavalink node version. */
-    version?: 'v3' | 'v4'
+    version?: 'v4'
 }
 
-export interface NodeInfo {
-    /** The version of this Lavalink server. */
-    version: NodeVersionInfo
-    /** The millisecond unix timestamp when this Lavalink jar was built. */
-    buildTime: number
-    /** The git information of this Lavalink server. */
-    git: NodeGitInfo
-    /** The JVM version this Lavalink server runs on. */
-    jvm: string
-    /** The Lavaplayer version being used by this server. */
-    lavaplayer
-    /** The enabled source managers for this server. */
-    sourceManagers: string[]
-    /** The enabled filters for this server. */
-    filters: string[]
-    /** The enabled plugins for this server */
-    plugins: NodePlugin[]
+export type NodeOP = NodeReadyOP | NodePlayerUpdateOP | NodeStatsOP | NodeEventOP
+
+/** Dispatched by Lavalink upon successful connection and authorization. Contains fields determining if resuming was successful, as well as the session id. */
+export interface NodeReadyOP {
+    op: 'ready'
+    /** Whether this session was resumed. */
+    resumed: boolean
+    /** The Lavalink session id of this connection. Not to be confused with a Discord voice session id. */
+    sessionId: string
 }
 
-export interface NodeVersionInfo {
-    /** The full version string of this Lavalink server. */
-    semver: string
-    /** The major version of this Lavalink server. */
-    major: number
-    /** The minor version of this Lavalink server. */
-    minor: number
-    /** The patch version of this Lavalink server. */
-    patch: number
-    /** The pre-release version according to semver as a `.` separated list of identifiers. */
-    preRelease: string | null
-    /** The build metadata according to semver as a `.` separated list of identifiers */
-    build: string | null
+/** Dispatched every x seconds (configurable in application.yml) with the current state of the player. */
+export interface NodePlayerUpdateOP {
+    op: 'playerUpdate'
+    /** The guild id of the player. */
+    guildId: string
+    /** The player state. */
+    state: PlayerState
 }
 
-export interface NodeGitInfo {
-    /** The branch this Lavalink server was built on. */
-    branch: string
-    /** The commit this Lavalink server was built on. */
-    commit: string
-    /** The millisecond unix timestamp for when the commit was created. */
-    commitTime: number
+export interface PlayerState {
+    /** Unix timestamp in milliseconds. */
+    time: number
+    /** The position of the track in milliseconds. */
+    position: number
+    /** Whether Lavalink is connected to the voice gateway. */
+    connected: boolean
+    /** The ping of the node to the Discord voice server in milliseconds (-1 if not connected). */
+    ping: number
 }
 
-export interface NodePlugin {
-    /** The name of the plugin. */
-    name: string
-    /** The version of the plugin. */
-    version: string
+export interface NodeStatsOP extends NodeStats {
+    op: 'stats'
 }
 
 export interface NodeStats {
@@ -637,35 +623,207 @@ export interface NodeCPUStats {
 
 export interface NodeFrameStats {
     /** The amount of sent frames. */
-    sent?: number
+    sent: number
     /** The amount of nulled frames. */
-    nulled?: number
+    nulled: number
     /** The amount of deficit frames. */
-    deficit?: number
+    deficit: number
 }
 
-export interface PlayerData {
+export interface NodeEventOP {
+    op: 'event'
+    /** The type of event. */
+    type: NodeEventType
+    /** The guild id. */
     guildId: string
-    track: TrackData | null
-    volume: number
-    paused: boolean
-    state: PlayerState
-    voice: PlayerVoiceState
-    filters: PlayerFilters
 }
 
-export interface PlayerState {
-    /** Unix timestamp in milliseconds */
-    time: number
-    /** The position of the track in milliseconds */
+export type NodeEventType =
+    | 'TrackStartEvent'
+    | 'TrackEndEvent'
+    | 'TrackExceptionEvent'
+    | 'TrackStuckEvent'
+    | 'WebSocketClosedEvent'
+
+export type NodeEvents = TrackStartEvent | TrackEndEvent | TrackExceptionEvent | TrackStuckEvent | WebSocketClosedEvent
+
+export interface TrackStartEvent extends NodeEventOP {
+    type: 'TrackStartEvent'
+    /** The track that started playing. */
+    track: Track
+}
+
+export interface TrackEndEvent extends NodeEventOP {
+    type: 'TrackEndEvent'
+    /** The track that ended playing. */
+    track: Track
+    /** The reason the track ended. */
+    reason: TrackEndReason
+}
+
+export type TrackEndReason = 'finished' | 'loadFailed' | 'stopped' | 'replaced' | 'cleanup'
+
+export interface TrackExceptionEvent extends NodeEventOP {
+    type: 'TrackExceptionEvent'
+    /** The track that threw the exception. */
+    track: Track
+    /** The occurred exception. */
+    exception: Exception
+}
+
+export interface Exception {
+    /** The message of the exception. */
+    message: string
+    /** The severity of the exception. */
+    severity: Severity
+    /** The cause of the exception. */
+    cause: string
+}
+
+/**
+ * `common` - The cause is known and expected, indicates that there is nothing wrong with the library itself.
+ *
+ * `suspicious` - The cause might not be exactly known, but is possibly caused by outside factors.
+ * For example when an outside service responds in a format that we do not expect.
+ *
+ * `fault` - The probable cause is an issue with the library or there is no way to tell what the cause might be.
+ * This is the default level and other levels are used in cases where the thrower has more in-depth knowledge about the error.
+ */
+export type Severity = 'common' | 'suspicious' | 'fault'
+
+export interface TrackStuckEvent extends NodeEventOP {
+    type: 'TrackStuckEvent'
+    /** The track that got stuck. */
+    track: Track
+    /** The threshold in milliseconds that was exceeded. */
+    thresholdMs: number
+}
+
+export interface WebSocketClosedEvent extends NodeEventOP {
+    type: 'WebSocketClosedEvent'
+    /** The Discord close event code. */
+    code: number
+    /** The close reason. */
+    reason: string
+    /** Whether the connection was closed by Discord. */
+    byRemote: boolean
+}
+
+export interface Track {
+    /** The base64 encoded track data. */
+    encoded: string
+    /** Info about the track. */
+    info: TrackInfo
+    /** Addition track info provided by plugins. */
+    pluginInfo: object
+    /** Additional track data provided via the Update Player endpoint. */
+    userData: object
+}
+
+export interface TrackInfo {
+    /** The track identifier. */
+    identifier: string
+    /** Whether the track is seekable. */
+    isSeekable: boolean
+    /** The track author. */
+    author: string
+    /** The track length in milliseconds. */
+    length: number
+    /** Whether the track is a stream. */
+    isStream: boolean
+    /** The track position in milliseconds. */
     position: number
-    /** Whether Lavalink is connected to the voice gateway */
-    connected: boolean
-    /** The ping of the node to the Discord voice server in milliseconds (-1 if not connected) */
-    ping: number
+    /** The track title. */
+    title: string
+    /** The track uri. */
+    uri: string | null
+    /** The track artwork url. */
+    artworkUrl: string | null
+    /** The track ISRC. */
+    isrc: string | null
+    /** The track source name. */
+    sourceName: string
 }
 
-export interface PlayerVoiceState {
+export interface PlaylistInfo {
+    /** The name of the playlist. */
+    name: string
+    /** The selected track of the playlist (-1 if no track is selected) */
+    selectedTrack: number
+}
+
+export type TrackLoadingResult =
+    | TrackResultData
+    | PlaylistResultData
+    | SearchResultData
+    | EmptyResultResult
+    | ErrorResultData
+/**
+ * `track` - A track has been loaded.
+ *
+ * `playlist` - A playlist has been loaded.
+ *
+ * `search` - A search result has been loaded.
+ *
+ * `empty` - There has been no matches for your identifier.
+ *
+ * `error` - Loading has failed with an error.
+ */
+export type LoadResultType = 'track' | 'playlist' | 'search' | 'empty' | 'error'
+
+export interface TrackResultData {
+    loadType: 'track'
+    data: Track
+}
+
+export interface PlaylistResultData {
+    loadType: 'playlist'
+    data: {
+        /** The info of the playlist. */
+        info: PlaylistInfo
+        /** Addition playlist info provided by plugins. */
+        pluginInfo: object
+        /** The tracks of the playlist. */
+        tracks: Track[]
+    }
+}
+
+export interface SearchResultData {
+    loadType: 'search'
+    data: Track[]
+}
+
+export interface EmptyResultResult {
+    loadType: 'empty'
+    data: object
+}
+
+export interface ErrorResultData {
+    loadType: 'error'
+    data: Exception
+}
+
+/** Modifies any outgoing REST requests. */
+export type ModifyRequest = (options: Dispatcher.RequestOptions) => void
+
+export interface NodePlayer {
+    /** The guild id of the player. */
+    guildId: string
+    /** The currently playing track. */
+    track?: Track
+    /** The volume of the player, range 0-1000, in percentage. */
+    volume: number
+    /** Whether the player is paused. */
+    paused: boolean
+    /** The state of the player. */
+    state: PlayerState
+    /** The voice state of the player. */
+    voice: VoiceState
+    /** The filters used by the player. */
+    filters: Filters
+}
+
+export interface VoiceState {
     /** The Discord voice token to authenticate with. */
     token: string
     /** The Discord voice endpoint to connect to. */
@@ -674,7 +832,7 @@ export interface PlayerVoiceState {
     sessionId: string
 }
 
-export interface PlayerFilters {
+export interface Filters {
     /** Adjusts the player volume from 0.0 to 5.0, where 1.0 is 100%. Values >1.0 may cause clipping. */
     volume?: number
     /** Adjusts 15 different bands. */
@@ -782,10 +940,17 @@ export interface LowPassFilter {
     smoothing?: number
 }
 
-export interface PlayerUpdateData {
-    /** The base64 encoded track to play. `null` stops the current track. */
-    encodedTrack?: string | null
-    /** The identifier of the track to play. */
+export interface UpdatePlayer {
+    track?: UpdatePlayerTrack
+    /**
+     * The base64 encoded track to play. `null` stops the current track.
+     * @deprecated
+     */
+    encodedTrack?: string
+    /**
+     * The identifier of the track to play.
+     * @deprecated
+     */
     identifier?: string
     /** The track position in milliseconds. */
     position?: number
@@ -796,29 +961,73 @@ export interface PlayerUpdateData {
     /** Whether the player is paused. */
     paused?: boolean
     /** The new filters to apply. This will override all previously applied filters. */
-    filters?: PlayerFilters
+    filters?: Filters
     /** Information required for connecting to Discord. */
-    voice?: PlayerVoiceState
+    voice?: VoiceState
 }
 
-export interface SessionData {
+export interface UpdatePlayerTrack {
+    /** The base64 encoded track to play. `null` stops the current track. */
+    encoded?: string
+    /** The identifier of the track to play. */
+    identifier?: string
+    /** Additional track data to be sent back in the Track Object. */
+    userData: object
+}
+
+export interface UpdateSession {
     /** Whether resuming is enabled for this session or not */
     resuming?: boolean
     /** The timeout in seconds (default is 60s) */
     timeout?: number
 }
 
-export interface TrackLoadingResult {
-    tracks: TrackData[]
-    loadType: LoadType
-    exception?: {
-        /** The message for the exception. */
-        message: string
-        /** The severity of exception. */
-        severity: string
-    }
-    playlistInfo: {
-        name: string
-        selectedTrack?: number
-    }
+export interface NodeInfo {
+    /** The version of this Lavalink server. */
+    version: NodeVersion
+    /** The millisecond unix timestamp when this Lavalink jar was built. */
+    buildTime: number
+    /** The git information of this Lavalink server. */
+    git: NodeGit
+    /** The JVM version this Lavalink server runs on. */
+    jvm: string
+    /** The Lavaplayer version being used by this server. */
+    lavaplayer
+    /** The enabled source managers for this server. */
+    sourceManagers: string[]
+    /** The enabled filters for this server. */
+    filters: string[]
+    /** The enabled plugins for this server */
+    plugins: NodePlugin[]
+}
+
+export interface NodeVersion {
+    /** The full version string of this Lavalink server. */
+    semver: string
+    /** The major version of this Lavalink server. */
+    major: number
+    /** The minor version of this Lavalink server. */
+    minor: number
+    /** The patch version of this Lavalink server. */
+    patch: number
+    /** The pre-release version according to semver as a `.` separated list of identifiers. */
+    preRelease: string | null
+    /** The build metadata according to semver as a `.` separated list of identifiers */
+    build: string | null
+}
+
+export interface NodeGit {
+    /** The branch this Lavalink server was built on. */
+    branch: string
+    /** The commit this Lavalink server was built on. */
+    commit: string
+    /** The millisecond unix timestamp for when the commit was created. */
+    commitTime: number
+}
+
+export interface NodePlugin {
+    /** The name of the plugin. */
+    name: string
+    /** The version of the plugin. */
+    version: string
 }
